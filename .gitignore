@@ -15,3 +15,6 @@ yarn-error.log*
 # Go build outputs (for Ayana)
 services/go-scheduler/bin/
 services/go-scheduler/*.exe
+
+# Personal reference files
+GLOSSARY.md
