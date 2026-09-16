@@ -14,7 +14,7 @@
 ---
 
 ## 📌 The Problem
-Physical queues at colleges, hospitals, government offices, and banks are inefficient, cause overcrowding, and offer zero visibility into actual wait times. Traditional digital queues are rigid and cannot handle complex, multi-stage workflows (e.g., *Registration $\rightarrow$ Verification $\rightarrow$ Payment*).
+Physical queues at colleges, hospitals, government offices, and banks are inefficient, cause overcrowding, and offer zero visibility into actual wait times. Traditional digital queues are rigid and cannot handle complex, multi-stage workflows 
 
 ## 💡 The Solution: Buffer
 **Buffer** is an intelligent, remote queue management system and multi-stage workflow orchestrator. It allows institutions to define dynamic, complex workflows, and allows users to join virtual queues seamlessly via QR code—tracking their live progress, required documents, and ETA directly on their phones.
