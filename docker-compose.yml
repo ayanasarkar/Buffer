@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: buffer_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: buffer_user
+      POSTGRES_PASSWORD: buffer_password
+      POSTGRES_DB: buffer_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: buffer_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: buffer_rabbit
+      RABBITMQ_DEFAULT_PASS: buffer_rabbit_pass
+    ports:
+      - "5672:5672"   # AMQP protocol port
+      - "15672:15672" # RabbitMQ Management Dashboard
+
+volumes:
+  postgres_data:
