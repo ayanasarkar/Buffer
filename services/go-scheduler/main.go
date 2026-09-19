@@ -1,0 +1,110 @@
+﻿package main
+
+import (
+"context"
+"log"
+"os"
+"os/signal"
+"strconv"
+"syscall"
+"time"
+
+"github.com/joho/godotenv"
+
+"go-scheduler/internal/db"
+"go-scheduler/internal/models"
+"go-scheduler/internal/queue"
+"go-scheduler/internal/scheduler"
+)
+
+func main() {
+if err := godotenv.Load(); err != nil {
+log.Printf("main: no .env file found, relying on real environment variables (%v)", err)
+}
+
+rabbitURL := requireEnv("RABBITMQ_URL")
+postgresURL := requireEnv("POSTGRES_URL")
+queueName := requireEnv("QUEUE_NAME")
+bufferMinutes := envInt("BUFFER_PERIOD_MINUTES", 60)
+slotMinutes := envInt("SLOT_DURATION_MINUTES", 10)
+
+ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer stop()
+
+consumer, err := queue.NewConsumer(rabbitURL, queueName)
+if err != nil {
+log.Fatalf("main: failed to start rabbitmq consumer: %v", err)
+}
+defer consumer.Close()
+
+events, err := consumer.Consume(ctx)
+if err != nil {
+log.Fatalf("main: failed to consume queue: %v", err)
+}
+log.Printf("main: listening on queue %q", queueName)
+
+writer, err := db.NewWriter(ctx, postgresURL)
+if err != nil {
+log.Fatalf("main: failed to connect to postgres: %v", err)
+}
+defer writer.Close()
+
+if err := writer.Init(ctx); err != nil {
+log.Fatalf("main: failed to init postgres schema: %v", err)
+}
+log.Printf("main: postgres connected and schema ready")
+
+now := time.Now()
+schedule := scheduler.DaySchedule{
+Open:         now,
+Close:        now.Add(8 * time.Hour),
+SlotDuration: time.Duration(slotMinutes) * time.Minute,
+Breaks:       nil,
+}
+log.Printf("main: day schedule open=%s close=%s slot=%dm",
+schedule.Open.Format(time.Kitchen), schedule.Close.Format(time.Kitchen), slotMinutes)
+
+results := make(chan models.ScheduledUser, 32)
+pipeline := scheduler.NewPipeline(schedule, scheduler.DefaultWeights, results)
+
+// context.Background() on purpose -- see writer.go's WriteScheduledUser
+// comment. No deadline here; each write gets its own fresh timeout at
+// the moment it actually runs, since flush() can happen anywhere up to
+// the full buffer window after the writer was built.
+writerErrs := writer.Run(context.Background(), results)
+go func() {
+for err := range writerErrs {
+log.Printf("main: postgres write error: %v", err)
+}
+}()
+
+bufferWindow := scheduler.NewBufferWindow(time.Duration(bufferMinutes)*time.Minute, pipeline)
+log.Printf("main: buffer window open for %d minutes", bufferMinutes)
+
+bufferWindow.Run(ctx, events)
+
+log.Printf("main: shutting down")
+close(results)
+time.Sleep(500 * time.Millisecond)
+}
+
+func requireEnv(key string) string {
+v := os.Getenv(key)
+if v == "" {
+log.Fatalf("main: required environment variable %s is not set", key)
+}
+return v
+}
+
+func envInt(key string, fallback int) int {
+v := os.Getenv(key)
+if v == "" {
+return fallback
+}
+n, err := strconv.Atoi(v)
+if err != nil {
+log.Printf("main: invalid int for %s=%q, using fallback %d", key, v, fallback)
+return fallback
+}
+return n
+}
