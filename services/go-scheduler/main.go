@@ -27,6 +27,8 @@ func main() {
 	queueName := requireEnv("QUEUE_NAME")
 	slotMinutes := envInt("SLOT_DURATION_MINUTES", 10)
 	queueStart := queueStartFromEnv()
+	scheduler.Batch1Lead = time.Duration(envInt("BATCH1_LEAD_SECONDS", 3600)) * time.Second
+	scheduler.Batch2Lead = time.Duration(envInt("BATCH2_LEAD_SECONDS", 600)) * time.Second
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -64,8 +66,8 @@ func main() {
 	}
 	log.Printf("main: queue starts %s | batch 1 at %s | batch 2 at %s | slot=%dm",
 		queueStart.Format(time.RFC3339),
-		queueStart.Add(-time.Hour).Format(time.Kitchen),
-		queueStart.Add(-10*time.Minute).Format(time.Kitchen),
+		queueStart.Add(-scheduler.Batch1Lead).Format(time.Kitchen),
+		queueStart.Add(-scheduler.Batch2Lead).Format(time.Kitchen),
 		slotMinutes)
 
 	results := make(chan models.ScheduledUser, 32)

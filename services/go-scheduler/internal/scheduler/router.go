@@ -40,8 +40,8 @@ func NewPhaseRouter(queueStart time.Time, handler BatchHandler) *PhaseRouter {
 // Start arms Batch 1 at start-1h and Batch 2 at start-10m. A time already in
 // the past fires immediately.
 func (r *PhaseRouter) Start(ctx context.Context) {
-	r.arm(ctx, models.PhaseOne, r.queueStart.Add(-time.Hour), true)
-	r.arm(ctx, models.PhaseTwo, r.queueStart.Add(-10*time.Minute), false)
+	r.arm(ctx, models.PhaseOne, r.queueStart.Add(-Batch1Lead), true)
+	r.arm(ctx, models.PhaseTwo, r.queueStart.Add(-Batch2Lead), false)
 }
 
 func (r *PhaseRouter) arm(ctx context.Context, phase models.AlgorithmPhase, at time.Time, includeTravel bool) {
@@ -151,3 +151,10 @@ func (r *PhaseRouter) Stop() {
 	r.mu.Unlock()
 	r.wg.Wait()
 }
+
+// Batch1Lead and Batch2Lead are how long before queue start each batch runs.
+// They are vars only so tests can compress them (BATCH1_LEAD_SECONDS in main.go).
+var (
+	Batch1Lead = time.Hour
+	Batch2Lead = 10 * time.Minute
+)
