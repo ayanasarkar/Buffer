@@ -16,8 +16,6 @@ type Consumer struct {
 	queue   amqp.Queue
 }
 
-// NewConsumer connects to RabbitMQ and declares the queue (durable, so
-// messages survive a broker restart).
 func NewConsumer(url, queueName string) (*Consumer, error) {
 	conn, err := amqp.Dial(url)
 	if err != nil {
@@ -32,11 +30,11 @@ func NewConsumer(url, queueName string) (*Consumer, error) {
 
 	q, err := ch.QueueDeclare(
 		queueName,
-		true,  // durable
-		false, // auto-delete
-		false, // exclusive
-		false, // no-wait
-		nil,   // arguments
+		true,
+		false,
+		false,
+		false,
+		nil,
 	)
 	if err != nil {
 		ch.Close()
@@ -47,17 +45,24 @@ func NewConsumer(url, queueName string) (*Consumer, error) {
 	return &Consumer{conn: conn, channel: ch, queue: q}, nil
 }
 
-// Consume starts consuming messages and returns a channel of decoded events.
-// Ack happens only after the event is successfully handed off downstream;
-// malformed messages are logged and discarded (nacked, not requeued).
+// envelope is unmarshaled first, on every message, so we know which event
+// type we're actually holding before picking a destination struct. The
+// queue carries more than one shape (UserRegistrationEvent,
+// JoinNextStageEvent) -- unmarshaling straight into UserRegistrationEvent,
+// as this file used to, silently zero-values a JoinNextStageEvent instead
+// of erroring, which then looked like a registration bug downstream.
+type envelope struct {
+	EventID string `json:"eventId"`
+}
+
 func (c *Consumer) Consume(ctx context.Context) (<-chan models.UserRegistrationEvent, error) {
 	msgs, err := c.channel.Consume(
 		c.queue.Name,
-		"",    // consumer tag
-		false, // auto-ack -- we ack manually after successful processing
-		false, // exclusive
-		false, // no-local
-		false, // no-wait
+		"",
+		false,
+		false,
+		false,
+		false,
 		nil,
 	)
 	if err != nil {
@@ -76,18 +81,42 @@ func (c *Consumer) Consume(ctx context.Context) (<-chan models.UserRegistrationE
 				if !ok {
 					return
 				}
-				var evt models.UserRegistrationEvent
-				if err := json.Unmarshal(d.Body, &evt); err != nil {
-					log.Printf("queue: dropping malformed message: %v", err)
-					d.Nack(false, false) // discard, don't requeue
+
+				var env envelope
+				if err := json.Unmarshal(d.Body, &env); err != nil {
+					log.Printf("queue: dropping malformed message (no eventId): %v", err)
+					d.Nack(false, false)
 					continue
 				}
-				select {
-				case events <- evt:
-					d.Ack(false)
-				case <-ctx.Done():
-					d.Nack(false, true) // requeue, we're shutting down
-					return
+
+				switch env.EventID {
+				case "UserRegistrationEvent":
+					var evt models.UserRegistrationEvent
+					if err := json.Unmarshal(d.Body, &evt); err != nil {
+						log.Printf("queue: dropping malformed UserRegistrationEvent: %v", err)
+						d.Nack(false, false)
+						continue
+					}
+					select {
+					case events <- evt:
+						d.Ack(false)
+					case <-ctx.Done():
+						d.Nack(false, true)
+						return
+					}
+
+				case "JoinNextStageEvent":
+					// TODO(stage-advancement): the scheduler has no logic
+					// yet to move an existing ticket to its next stage.
+					// Discarding on purpose, loudly, so this gap stays
+					// visible instead of being silently swallowed as an
+					// empty registration (the previous behavior).
+					log.Printf("queue: JoinNextStageEvent received but not yet handled by scheduler -- discarding: %s", string(d.Body))
+					d.Nack(false, false)
+
+				default:
+					log.Printf("queue: dropping message with unknown eventId %q", env.EventID)
+					d.Nack(false, false)
 				}
 			}
 		}
