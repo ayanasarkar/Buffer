@@ -25,6 +25,14 @@ func NewWriter(ctx context.Context, url string) (*Writer, error) {
 	return &Writer{pool: pool}, nil
 }
 
+// Pool exposes the underlying connection pool so other packages (the new
+// internal/db/tickets.go, specifically) can run their own queries without
+// opening a second pool. NEW -- everything else in this file is
+// unchanged from the original.
+func (w *Writer) Pool() *pgxpool.Pool {
+	return w.pool
+}
+
 func (w *Writer) Init(ctx context.Context) error {
 	_, err := w.pool.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS scheduled_users (
@@ -154,4 +162,34 @@ updated_at    = now()
 		return fmt.Errorf("failed to notify eta update for %s: %w", u.UserID, err)
 	}
 	return nil
+}
+
+// InitProcessingLog creates the ticket_processing_log table if it does not
+// already exist. This is a go-scheduler-owned side table, like
+// live_eta_updates, NOT part of Prisma schema -- it exists because the
+// real "Ticket" table has no processingStartedAt column, confirmed absent
+// from schema.prisma. Tracking start/end here means the Stuck alert and
+// the peer-comparison delay check work today, without waiting on a
+// migration or touching any Prisma-managed table.
+func (w *Writer) InitProcessingLog(ctx context.Context) error {
+_, err := w.pool.Exec(ctx, `
+CREATE TABLE IF NOT EXISTS ticket_processing_log (
+id         SERIAL PRIMARY KEY,
+ticket_id  TEXT NOT NULL,
+counter_id TEXT NOT NULL,
+started_at TIMESTAMPTZ NOT NULL,
+ended_at   TIMESTAMPTZ
+)
+`)
+if err != nil {
+return fmt.Errorf("failed to create ticket_processing_log table: %w", err)
+}
+_, err = w.pool.Exec(ctx, `
+CREATE INDEX IF NOT EXISTS idx_processing_log_open
+ON ticket_processing_log (ticket_id) WHERE ended_at IS NULL
+`)
+if err != nil {
+return fmt.Errorf("failed to create ticket_processing_log index: %w", err)
+}
+return nil
 }
