@@ -48,6 +48,7 @@ type StudentActionEvent struct {
 	Type      StaffEventType `json:"type"`
 	TicketID  string         `json:"ticketId"`
 	CounterID string         `json:"counterId"`
+	LegacyUserID string `json:"user_id"` // CONFIRMED: completeStudent (feature/express-gateway @4e52b5c) sends the ticket ID under this key instead of "ticketId" -- OnComplete falls back to it; ask Souvik to rename the key so this field can be deleted
 }
 
 // CounterStatus is a Counter's claimed/unclaimed state.

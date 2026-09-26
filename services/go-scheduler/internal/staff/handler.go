@@ -23,6 +23,9 @@ return &Handler{store: store, notifier: notifier}
 // processing-time log so AvgProcessingMinutes has a real duration for
 // this ticket, then recalc ETAs.
 func (h *Handler) OnComplete(ctx context.Context, evt models.StudentActionEvent) {
+if evt.TicketID == "" {
+evt.TicketID = evt.LegacyUserID // CONFIRMED: Express sends this as "user_id", see models/staff.go
+}
 if err := h.store.SetTicketStatus(ctx, evt.TicketID, models.TicketCompleted); err != nil {
 log.Printf("staff: COMPLETE_STUDENT ticket=%s failed: %v", evt.TicketID, err)
 return
@@ -44,6 +47,13 @@ log.Printf("staff: COMPLETE_STUDENT ticket=%s: recalculated ETAs for %d waiting 
 // everyone behind them. Also defensively closes any open processing log
 // row for this ticket, harmless if none exists.
 func (h *Handler) OnSkip(ctx context.Context, evt models.StudentActionEvent) {
+if evt.CounterID == "" {
+if ticket, err := h.store.GetTicket(ctx, evt.TicketID); err != nil {
+log.Printf("staff: SKIP_STUDENT ticket=%s: no counterId on the wire, and ticket lookup failed too: %v", evt.TicketID, err)
+} else if ticket.AssignedCounterID != nil {
+evt.CounterID = *ticket.AssignedCounterID
+}
+}
 if err := h.store.SetTicketStatus(ctx, evt.TicketID, models.TicketSkipped); err != nil {
 log.Printf("staff: SKIP_STUDENT ticket=%s failed: %v", evt.TicketID, err)
 return
@@ -68,6 +78,13 @@ log.Printf("staff: SKIP_STUDENT ticket=%s: recalculated ETAs for %d waiting user
 // their original place in line, not at the back. Confirm with the team
 // whether a restored student should keep their place or go to the back.
 func (h *Handler) OnRestore(ctx context.Context, evt models.StudentActionEvent) {
+if evt.CounterID == "" {
+if ticket, err := h.store.GetTicket(ctx, evt.TicketID); err != nil {
+log.Printf("staff: RESTORE_STUDENT ticket=%s: no counterId on the wire, and ticket lookup failed too: %v", evt.TicketID, err)
+} else if ticket.AssignedCounterID != nil {
+evt.CounterID = *ticket.AssignedCounterID
+}
+}
 if err := h.store.SetTicketStatus(ctx, evt.TicketID, models.TicketWaiting); err != nil {
 log.Printf("staff: RESTORE_STUDENT ticket=%s failed: %v", evt.TicketID, err)
 return
