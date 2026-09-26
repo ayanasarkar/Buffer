@@ -1,4 +1,4 @@
-package models
+﻿package models
 
 import "time"
 
@@ -94,6 +94,7 @@ type CounterAutoPausedAlert struct {
 type QueueDelayAlert struct {
 	Type      string `json:"type"` // "QUEUE_DELAY_ALERT" -- given verbatim
 	CounterID string `json:"counterId"`
+	StageID   string `json:"stageId"` // NEW: checkDelay already has this in scope, Express needs it to message correctly
 	DelayMins int    `json:"delayMins"`
 }
 

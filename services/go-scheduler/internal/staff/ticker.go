@@ -1,4 +1,4 @@
-package staff
+﻿package staff
 
 import (
 	"context"
@@ -286,6 +286,7 @@ func (t *Ticker) checkDelay(ctx context.Context, stageID string, group []models.
 		if err := t.notifier.Publish(ctx, models.QueueDelayAlert{
 			Type:      "QUEUE_DELAY_ALERT",
 			CounterID: c.ID,
+			StageID:   stageID,
 			DelayMins: delayMins,
 		}); err != nil {
 			log.Printf("ticker: delay counter=%s: alert publish failed: %v", c.ID, err)
